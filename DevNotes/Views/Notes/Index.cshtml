@@ -1,0 +1,245 @@
+@model DevNotes.Models.Note?
+@{
+    Layout = null;
+    var notes = ViewBag.Notes as List<DevNotes.Models.Note> ?? new();
+    var selectedId = ViewBag.SelectedId as int?;
+    var pinned = notes.Where(n => n.IsPinned).ToList();
+    var regular = notes.Where(n => !n.IsPinned).ToList();
+
+    string TimeAgo(DateTime dt)
+    {
+        var d = DateTime.UtcNow - dt;
+        if (d.TotalSeconds < 60) return "now";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes}m";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h";
+        if (d.TotalDays < 7) return $"{(int)d.TotalDays}d";
+        return dt.ToString("MMM d");
+    }
+
+    string LangBadge(string lang) => lang switch
+    {
+        "javascript" => "JS", "typescript" => "TS", "python" => "PY",
+        "csharp" => "C#", "java" => "Java", "cpp" => "C++", "c" => "C",
+        "go" => "Go", "rust" => "RS", "sql" => "SQL", "html" => "HTML",
+        "css" => "CSS", "xml" => "XML", "markdown" => "MD",
+        "shell" => "SH", "yaml" => "YML", "json" => "JSON", _ => "TXT"
+    };
+
+    string Preview(string content)
+    {
+        var line = (content ?? "").Split('\n').FirstOrDefault(l => l.Trim().Length > 0) ?? "";
+        return line.Length > 42 ? line[..42] + "…" : line;
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevNotes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+
+<div class="app">
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="app-logo">
+                <div class="logo-mark">DN</div>
+                <span>DevNotes</span>
+            </div>
+            <button class="btn-new" id="btnNew" title="New Note (Ctrl+N)">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 2a1 1 0 011 1v4h4a1 1 0 110 2H9v4a1 1 0 11-2 0V9H3a1 1 0 010-2h4V3a1 1 0 011-1z"/>
+                </svg>
+                New
+            </button>
+        </div>
+
+        <div class="search-wrap">
+            <svg class="search-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398l3.85 3.85a1 1 0 001.415-1.414l-3.868-3.834zm-5.242 1.156a5.5 5.5 0 110-11 5.5 5.5 0 010 11z"/>
+            </svg>
+            <input type="text" id="searchInput" class="search-input" placeholder="Search notes…">
+        </div>
+
+        <div class="notes-list" id="notesList">
+
+            @if (pinned.Any())
+            {
+                <div id="pinnedSection">
+                    <div class="section-title">Pinned</div>
+                    @foreach (var note in pinned)
+                    {
+                        <div class="note-item @(note.Id == selectedId ? "active" : "")"
+                             data-id="@note.Id" data-tags="@note.Tags" data-pinned="1">
+                            <div class="item-row">
+                                <span class="pin-dot" title="Pinned">⬡</span>
+                                <span class="item-title">@note.Title</span>
+                                <span class="item-time">@TimeAgo(note.UpdatedAt)</span>
+                            </div>
+                            <div class="item-meta">
+                                <span class="lang-badge">@LangBadge(note.Language)</span>
+                                <span class="item-preview">@Preview(note.Content)</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div id="pinnedSection" style="display:none">
+                    <div class="section-title">Pinned</div>
+                </div>
+            }
+
+            <div id="allSection">
+                @if (regular.Any() || pinned.Any())
+                {
+                    <div class="section-title">Notes</div>
+                }
+                @foreach (var note in regular)
+                {
+                    <div class="note-item @(note.Id == selectedId ? "active" : "")"
+                         data-id="@note.Id" data-tags="@note.Tags" data-pinned="0">
+                        <div class="item-row">
+                            <span class="item-title">@note.Title</span>
+                            <span class="item-time">@TimeAgo(note.UpdatedAt)</span>
+                        </div>
+                        <div class="item-meta">
+                            <span class="lang-badge">@LangBadge(note.Language)</span>
+                            <span class="item-preview">@Preview(note.Content)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (!notes.Any())
+            {
+                <div class="list-empty">
+                    No notes yet<br>
+                    <kbd>Ctrl+N</kbd> to create one
+                </div>
+            }
+
+        </div>
+    </aside>
+
+    <!-- Resize grip -->
+    <div class="resize-grip" id="resizeGrip"></div>
+
+    <!-- ═══ EDITOR PANEL ═══ -->
+    <main class="editor-panel">
+
+        <div class="toolbar">
+            <input type="text" id="noteTitle" class="title-input"
+                   placeholder="Untitled…"
+                   value="@(Model?.Title ?? "")">
+            <div class="toolbar-right">
+                <select id="noteLanguage" class="lang-select" title="Syntax Language">
+                    @{
+                        var langs = new[]
+                        {
+                            ("text","Plain Text"), ("javascript","JavaScript"), ("typescript","TypeScript"),
+                            ("json","JSON"), ("python","Python"), ("csharp","C#"),
+                            ("java","Java"), ("cpp","C++"), ("c","C"),
+                            ("go","Go"), ("rust","Rust"), ("sql","SQL"),
+                            ("html","HTML"), ("css","CSS"), ("xml","XML"),
+                            ("markdown","Markdown"), ("shell","Shell / Bash"), ("yaml","YAML")
+                        };
+                    }
+                    @foreach (var (val, label) in langs)
+                    {
+                        <option value="@val" @(Model?.Language == val ? "selected" : "")>@label</option>
+                    }
+                </select>
+                <input type="text" id="noteTags" class="tags-input"
+                       placeholder="tags, comma separated"
+                       value="@(Model?.Tags ?? "")"
+                       title="Tags">
+                <button id="wrapBtn" class="btn-icon" title="Toggle Word Wrap (Alt+Z)">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1 3.5A.5.5 0 011.5 3h13a.5.5 0 010 1h-13A.5.5 0 011 3.5zm0 4A.5.5 0 011.5 7H10a3 3 0 110 6H9v.5a.5.5 0 01-1 0V13H6.5a.5.5 0 010-1H8v-1H6.5a.5.5 0 010-1H8V9.5A.5.5 0 018.5 9H10a2 2 0 000-4H1.5A.5.5 0 011 7.5z"/>
+                    </svg>
+                </button>
+                <button id="pinBtn" class="btn-icon @(Model?.IsPinned == true ? "active" : "")"
+                        title="@(Model?.IsPinned == true ? "Unpin" : "Pin note")">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M4.146.146A.5.5 0 014.5 0h7a.5.5 0 01.5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 01-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 01-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 005 6.708V2.277a2.77 2.77 0 01-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 01.146-.354z"/>
+                    </svg>
+                </button>
+                <button id="btnDelete" class="btn-icon btn-danger" title="Delete Note">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z"/>
+                        <path fill-rule="evenodd" d="M14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2H6a1 1 0 011-1h2a1 1 0 011 1h3.5a1 1 0 011 1v1zM4.118 4L4 4.059V13a1 1 0 001 1h6a1 1 0 001-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                    </svg>
+                </button>
+                <button id="btnSave" class="btn-save" title="Save (Ctrl+S)">
+                    Save
+                </button>
+            </div>
+        </div>
+
+        <div id="editorHost" class="editor-host"></div>
+
+        <div class="status-bar">
+            <span id="statusSaved" class="status-ok">✓ Saved</span>
+            <span class="sep">│</span>
+            <span id="statusCursor">Ln 1, Col 1</span>
+            <span id="statusSel" class="status-sel"></span>
+            <div class="status-right">
+                <span id="statusWords">0 words</span>
+                <span class="sep">│</span>
+                <span id="statusChars">0 chars</span>
+                <span class="sep">│</span>
+                <span id="statusLang" class="status-lang">text</span>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    window.__dn = {
+        id:   @(selectedId.HasValue ? selectedId.Value.ToString() : "null"),
+        content:  @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model?.Content ?? "")),
+        language: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model?.Language ?? "text"))
+    };
+</script>
+
+<!-- CodeMirror 5 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"></script>
+<!-- Addons: search, bracket matching, active line, comment -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/jump-to-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="/js/site.js"></script>
+
+</body>
+</html>
